@@ -17,11 +17,8 @@ class SaveToMysql:
             update = ', '.join(["{key} = %s".format(key=key) for key in house])
             sql += update
             result = tuple(house.values()) * 2
-            print(sql)
-            print(result)
             try:
                 if cursor.execute(sql, result):
-                    print('Successful')
                     self.db.commit()
             except:
                 print('fail')

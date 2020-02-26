@@ -13,8 +13,12 @@ headers = {
     'Referer': 'https://cd.lianjia.com/ditiefang/'
 }
 
+none_housecode = 0
+
 
 class Scrawl:
+    none_housecode = 0
+
     def __init__(self):
         self.lines = {}
         self.stations = {'li110460717s1620029748564158': {
@@ -22,171 +26,225 @@ class Scrawl:
             'href': 'https://cd.lianjia.com/ditiefang/li110460717/'
         }}
 
-    def get_proxy(self):
-        try:
-            PROXY_POOL_URL = 'http://localhost:5555/get'
-            response = requests.get(PROXY_POOL_URL)
-            if response.status_code == 200:
-                return response.text
-        except ConnectionError:
-            return None
-
-    def get_lines_stations(self):
+    def get_lines(self):
         url = 'https://cd.lianjia.com/ershoufang/'
+        proxies = self.get_proxy()
         try:
-            # proxy = self.get_proxy()
-            # proxies = {
-            #     'http': 'http://' + proxy,
-            #     'https': 'https://' + proxy,
-            # }
-            page = requests.get(url, headers=headers)
-            if page.status_code == 200:
-                soup = BeautifulSoup(page.text, "html.parser")
+            res = requests.get(url, headers=headers, proxies=proxies, timeout=15)
+            if res.status_code == 200:
+                soup = BeautifulSoup(res.text, "html.parser")
                 result = soup.find('div', {'data-role': 'ditiefang'})
-                a_eles = result.find_all('a')
-                for item in a_eles:
-                    href = item['href']
-                    self.lines[href.split('/')[2]] = {
-                        'name': item.text,
-                        'href': "https://cd.lianjia.com" + href
-                    }
-
-                for item in self.lines.values():
-                    url_line = item['href']
-                    page_line = requests.get(url_line, headers=headers)
-                    soup_line = BeautifulSoup(page_line.text, "html.parser")
-                    result_line = soup_line.find('div', {'data-role': 'ditiefang'})
-                    content = result_line.find_all('div')[1].find_all('a')
-
-                    for a_ele in content:
-                        href = a_ele['href']
-                        index = href.split('/')[2]
-                        self.stations[index] = {
-                            'name': a_ele.text,
-                            'line': item['name'],
+                if result is not None:
+                    a_eles = result.find_all('a')
+                    for item in a_eles:
+                        href = item['href']
+                        line = {
+                            'name': item.text,
                             'href': "https://cd.lianjia.com" + href
                         }
-                        print(self.stations)
+                        self.lines[href.split('/')[2]] = line
+                        # 获取当前线路的所有地铁站
+                        self.get_stations(line)
+                    print('line获取完毕', self.lines)
+                else:
+                    print('没有数据')
             else:
-                print('请求出错:' + page.status_code)
+                print('请求出错:' + res.status_code)
+                self.get_lines()
         except requests.ConnectionError:
+            print('连接出错')
+            self.get_lines()
             return None
 
-    def get_house_by_station(self):
-        for key, value in self.stations.items():
-            # 有无电梯 elevator
-            ies = [{'index': 'ie2', 'value': 2}, {'index': 'ie1', 'value': 1}]
-            # 交易权属 tradeProperty
-            dps = [{'index': 'dp1', 'value': 1},
-                   {'index': 'dp2', 'value': 2},
-                   {'index': 'dp3', 'value': 3},
-                   {'index': 'dp4', 'value': 4}]
-            sf = [{'index': 'sf1', 'value': '普通住宅'}]
-            # 地铁距离 farFromStation
-            mts = [{'index': 'mt1', 'value': 1}, {'index': 'mt2', 'value': 2},
-                   {'index': 'mt3', 'value': 3}]
-
-            # 构造所有的条件查询
-            paths = []
-            path_temp = {}
-            for ie in ies:
-                path_temp['elevator'] = ie['value']
-                for dp in dps:
-                    path_temp['tradeProperty'] = dp['value']
-                    for mt in mts:
-                        path_temp['farFromStation'] = mt['value']
-                        path_temp['path_str'] = ('ie' + str(ie['value'])) + \
-                                                ('dp' + str(dp['value']) + str(sf[0]['index'])) + \
-                                                ('mt' + str(mt['value']))
-                        paths.append({key: value for key, value in path_temp.items()})
-            print('paths:-------', paths)
-            paths = [paths[0], paths[1], paths[2]]
-            # 按条件查询所有数据
-            for path in paths:
-                url_stn = value['href']
-                page_stn = requests.get(url_stn + path['path_str'], headers=headers)
-                soup_stn = BeautifulSoup(page_stn.text, "html.parser")
-                try:  # 如果有多页数据，提取页码
-                    total_page = json.loads(
-                        soup_stn.find('div', {'class': 'page-box house-lst-page-box'})['page-data']
-                    )['totalPage']
-                except:
-                    total_page = 1
-                    print('Number Error')
-
-                station = value['name']
-                line = value['line']
-                print('正在爬取:', path)
-                total_page = 1
-
-                # 分页查找
-                house_list = []
-                for i in range(1, total_page + 1):
-                    pg = ""
-                    if i > 1:
-                        pg = "pg" + str(i)
-                    pg = requests.get(url_stn + pg + path['path_str'] + '/', headers=headers)
-                    soup_dtl = BeautifulSoup(pg.text, "html.parser")
-                    result_dtl = soup_dtl.find('ul', {'class': 'sellListContent'})
-                    try:
-                        house_li_eles = result_dtl.find_all('li')  # 有些地铁站没有二手房信息，所以遇到这种情况程序需要自动跳过，否则会报错
-                    except:
-                        print('无二手房信息')
-                        continue
-
-                    for item in house_li_eles:
-                        house = self.format_data(item, station, line)
-                        house.update({key: value for key, value in path.items() if key != 'path_str'})
-                        house_list.append(house)
-                print(house_list)
-                self.save_data('mysql', house_list)
-
-    def format_data(self, item, station, line):
-        title = item.find('div', {'class': 'title'}).find('a')
-        href = title['href']
-        housecode = title['data-housecode']
-        name = title.text
-        positionInfo = item.find('div', {'class': 'positionInfo'})
-        position_eles = positionInfo.findAll('a')
-        residential = position_eles[0].text
-        area = position_eles[1].text
-        houseInfo = item.find('div', {'class': 'houseInfo'})
-        house = houseInfo.text.split(' | ')
-        print(house)
-        type = house[0]
-        houseArea = re.findall("\d*\.\d+|\d+", house[1])[0]
-        orientation = house[2]
-        decoration = house[3]
-        floor = house[4]
+    def get_stations(self, line):
+        url_line = line['href']
+        proxies = self.get_proxy()
         try:
-            if '年' in house[5]:
-                buildingTime = re.findall("\d*\.\d+|\d+", house[5])[0]
-                buildingType = house[6]
+            res = requests.get(url_line, headers=headers, proxies=proxies, timeout=15)
+            if res.status_code == 200:
+                soup = BeautifulSoup(res.text, "html.parser")
+                result = soup.find('div', {'data-role': 'ditiefang'})
+                a_eles = result.find_all('div')[1].find_all('a')
+                for a_ele in a_eles:
+                    href = a_ele['href']
+                    index = href.split('/')[2]
+                    station = {
+                        'name': a_ele.text,
+                        'line': line['name'],
+                        'href': "https://cd.lianjia.com" + href
+                    }
+                    self.stations[index] = station
+                    # 获取当前地铁站的所有二手房
+                    self.get_house_by_station(station)
+                print('station获取完毕', self.stations)
             else:
-                buildingTime = None
-                buildingType = house[5]
-        except:
-            print(house)
+                print('请求出错:' + res.status_code)
+                self.get_stations(line)
+        except requests.ConnectionError:
+            print('连接出错')
+            self.get_stations(line)
+
+    def get_proxy(self):
+        def getOne():
+            try:
+                PROXY_POOL_URL = 'http://localhost:5555/get'
+                response = requests.get(PROXY_POOL_URL)
+                if response.status_code == 200:
+                    return response.text
+            except ConnectionError:
+                return None
+
+        ip = getOne()
+        if ip is not None:
+            proxy = {
+                'http': 'http://' + ip
+            }
+            return proxy
+        else:
+            print('获取代理失败')
             return None
-        followInfo = item.find('div', {'class': 'followInfo'})
-        follow = followInfo.text[0]
-        tag = item.find('div', {'class': 'tag'})
-        tag_span = tag.find_all('span')
-        tags = []
-        for tag_item in tag_span:
-            tags.append(tag_item['class'][0] + ':' + tag_item.text)
-        unitPrice_ele = item.find('div', {'class': 'unitPrice'})
-        unitPrice = unitPrice_ele['data-price']
-        totalPrice_ele = item.find('div', {'class': 'totalPrice'})
-        totalPrice = totalPrice_ele.find('span').text
-        result = {
-            'housecode': housecode, 'name': name, 'line': line, 'station': station, 'residential': residential,
-            'area': area, 'type': type, 'houseArea': float(houseArea), 'orientation': orientation,
-            'decoration': decoration, 'floor': floor, 'buildingTime': int(buildingTime) if buildingTime else None, 'buildingType': buildingType,
-            'follow': int(follow), 'unitPrice': float(unitPrice), 'totalPrice': float(totalPrice),
-            'tags': (';').join(tags), 'href': href
-        }
-        return result
+
+    def get_condition(self):
+        # 有无电梯 elevator
+        ies = [{'index': 'ie2', 'value': 2}, {'index': 'ie1', 'value': 1}]
+        # 交易权属 tradeProperty
+        dps = [{'index': 'dp1', 'value': 1},
+               {'index': 'dp2', 'value': 2},
+               {'index': 'dp3', 'value': 3},
+               {'index': 'dp4', 'value': 4}]
+        sf = [{'index': 'sf1', 'value': '普通住宅'}]
+        # 地铁距离 farFromStation
+        mts = [{'index': 'mt1', 'value': 1}, {'index': 'mt2', 'value': 2},
+               {'index': 'mt3', 'value': 3}]
+
+        # 构造所有的条件查询
+        paths = []
+        path_temp = {}
+        for ie in ies:
+            path_temp['elevator'] = ie['value']
+            for dp in dps:
+                path_temp['tradeProperty'] = dp['value']
+                for mt in mts:
+                    path_temp['farFromStation'] = mt['value']
+                    path_temp['path_str'] = ('ie' + str(ie['value'])) + \
+                                            ('dp' + str(dp['value']) + str(sf[0]['index'])) + \
+                                            ('mt' + str(mt['value']))
+                    paths.append({key: value for key, value in path_temp.items()})
+        return paths
+
+    def get_house_by_station(self, station):
+        conditions = self.get_condition()
+        stnname = station['name']
+        line = station['line']
+        # 按条件查询所有数据
+        for condition in conditions:
+            url_stn = station['href']
+
+            def format_data(item):
+                title = item.find('div', {'class': 'title'}).find('a')
+                href = title['href']
+                if title.has_attr('data-housecode'):
+                    housecode = title['data-housecode']
+                elif title.has_attr('data-lj_action_housedel_id'):
+                    housecode = title['data-lj_action_housedel_id']
+                else:
+                    self.none_housecode += 1
+                    housecode = 'none-housecoe' + str(self.none_housecode)
+                name = title.text
+                positionInfo = item.find('div', {'class': 'positionInfo'})
+                position_eles = positionInfo.findAll('a')
+                residential = position_eles[0].text
+                area = position_eles[1].text
+                houseInfo = item.find('div', {'class': 'houseInfo'})
+                info = houseInfo.text.split(' | ')
+                type = info[0]
+                houseArea = re.findall("\d*\.\d+|\d+", info[1])[0]
+                orientation = info[2]
+                decoration = info[3]
+                floor = info[4]
+                if '年' in info[5]:
+                    buildingTime = re.findall("\d*\.\d+|\d+", info[5])[0]
+                    buildingType = info[6]
+                else:
+                    buildingTime = None
+                    buildingType = info[5]
+
+                followInfo = item.find('div', {'class': 'followInfo'})
+                follow = followInfo.text[0]
+                tag = item.find('div', {'class': 'tag'})
+                tag_span = tag.find_all('span')
+                tags = []
+                for tag_item in tag_span:
+                    tags.append(tag_item['class'][0] + ':' + tag_item.text)
+                unitPrice_ele = item.find('div', {'class': 'unitPrice'})
+                unitPrice = unitPrice_ele['data-price']
+                totalPrice_ele = item.find('div', {'class': 'totalPrice'})
+                totalPrice = totalPrice_ele.find('span').text
+                result = {
+                    'housecode': housecode, 'name': name, 'line': line, 'station': stnname, 'residential': residential,
+                    'area': area, 'type': type, 'houseArea': float(houseArea), 'orientation': orientation,
+                    'decoration': decoration, 'floor': floor,
+                    'buildingTime': int(buildingTime) if buildingTime else None,
+                    'buildingType': buildingType,
+                    'follow': int(follow), 'unitPrice': float(unitPrice), 'totalPrice': float(totalPrice),
+                    'tags': (';').join(tags), 'href': href
+                }
+                return result
+
+            def get_house_by_page(page):
+                house_list = []
+                proxies = self.get_proxy()
+                try:
+                    res = requests.get(url_stn + page + condition['path_str'] + '/', headers=headers, proxies=proxies,
+                                       timeout=15)
+                    if res.status_code == 200:
+                        soup_dtl = BeautifulSoup(res.text, "html.parser")
+                        result_dtl = soup_dtl.find('ul', {'class': 'sellListContent'})
+                        try:
+                            house_li_eles = result_dtl.find_all('li')  # 有些地铁站没有二手房信息，所以遇到这种情况程序需要自动跳过，否则会报错
+                        except:
+                            print('无二手房信息')
+                            return None
+                        for item in house_li_eles:
+                            house = format_data(item)
+                            house.update({key: value for key, value in condition.items() if key != 'path_str'})
+                            house_list.append(house)
+                        return house_list
+                    else:
+                        print('返回错误page', page)
+                        return None
+                except requests.ConnectionError:
+                    print('连接出错')
+                    get_house_by_page(pg)
+
+            proxy = self.get_proxy()
+            try:
+                print('正在爬取的地铁站和条件', url_stn + condition['path_str'])
+                page_stn = requests.get(url_stn + condition['path_str'], headers=headers, proxies=proxy, timeout=15)
+                if page_stn.status_code == 200:
+                    soup_stn = BeautifulSoup(page_stn.text, "html.parser")
+                    try:  # 如果有多页数据，提取页码
+                        total_page = json.loads(
+                            soup_stn.find('div', {'class': 'page-box house-lst-page-box'})['page-data']
+                        )['totalPage']
+                    except:
+                        total_page = 1
+                        print('Number Error')
+                    # 分页查找
+                    houses = []
+                    for i in range(1, total_page + 1):
+                        pg = ""
+                        if i > 1:
+                            pg = "pg" + str(i)
+                        house_one_page = get_house_by_page(pg)
+                        if house_one_page is not None:
+                            print('当前页:', pg)
+                            houses += house_one_page
+                    self.save_data('mysql', houses)
+                else:
+                    print('访问出错', page_stn.status_code)
+            except requests.ConnectionError:
+                print('请求出错地铁站', stnname)
 
     def save_data(self, type, house_list):
         save_data = SaveToMysql(type)
@@ -198,8 +256,8 @@ class Scrawl:
 
 if __name__ == '__main__':
     scrawl = Scrawl()
-    # scrawl.get_lines_stations()
-    scrawl.get_house_by_station()
+    scrawl.get_lines()
+    # scrawl.get_house_by_station()
     # scrawl.save_data('mysql', [
     #     {'housecode': '106103984960', 'name': '天鹅湖北苑大标间，中楼层采光好，位置安静', 'line': '1号线(科学城-韦家碾)', 'station': '韦家碾站',
     #      'residential': '天鹅湖北苑 ', 'area': '新会展', 'type': '1室0厅 ', 'houseArea': ' 59.5平米 ', 'orientation': ' 南 ',
