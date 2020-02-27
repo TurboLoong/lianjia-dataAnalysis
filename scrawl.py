@@ -4,7 +4,7 @@ import re
 import requests
 from bs4 import BeautifulSoup
 
-from save_data import SaveToMysql
+from save_data import SaveData
 
 headers = {
     'Cache-Control': 'max-age=0',
@@ -23,7 +23,7 @@ class Scrawl:
     def __init__(self):
         self.lines = {}
         self.stations = []
-        self.mysqlDB = SaveToMysql()
+        self.save = SaveData()
 
     def get_lines(self):
         url = 'https://cd.lianjia.com/ershoufang/'
@@ -94,26 +94,6 @@ class Scrawl:
         except requests.ConnectionError:
             print('连接出错')
             self.get_stations(line)
-
-    def get_proxy(self):
-        def getOne():
-            try:
-                PROXY_POOL_URL = 'http://localhost:5555/get'
-                response = requests.get(PROXY_POOL_URL)
-                if response.status_code == 200:
-                    return response.text
-            except ConnectionError:
-                return None
-
-        ip = getOne()
-        if ip is not None:
-            proxy = {
-                'http': 'http://' + ip
-            }
-            return proxy
-        else:
-            print('获取代理失败')
-            return None
 
     def get_condition(self):
         # 有无电梯 elevator
@@ -191,15 +171,11 @@ class Scrawl:
                 unitPrice = unitPrice_ele['data-price']
                 totalPrice_ele = item.find('div', {'class': 'totalPrice'})
                 totalPrice = totalPrice_ele.find('span').text
-                result = {
-                    'housecode': housecode, 'name': name, 'line': line, 'station': stnname, 'residential': residential,
-                    'area': area, 'type': type, 'houseArea': float(houseArea), 'orientation': orientation,
-                    'decoration': decoration, 'floor': floor,
-                    'buildingTime': int(buildingTime) if buildingTime else None,
-                    'buildingType': buildingType,
-                    'follow': int(follow), 'unitPrice': float(unitPrice), 'totalPrice': float(totalPrice),
-                    'tags': (';').join(tags), 'href': href
-                }
+                result = (
+                    housecode, name, line, stnname, residential, area, type, float(houseArea), orientation,
+                    decoration, floor, int(buildingTime) if buildingTime else None, buildingType, int(follow),
+                    float(unitPrice), float(totalPrice), (';').join(tags), href
+                )
                 return result
 
             def get_house_by_page(page):
@@ -218,7 +194,7 @@ class Scrawl:
                             return None
                         for item in house_li_eles:
                             house = format_data(item)
-                            house.update({key: value for key, value in condition.items() if key != 'path_str'})
+                            house += tuple(value for key, value in condition.items() if key != 'path_str')
                             house_list.append(house)
                         return house_list
                     else:
@@ -256,11 +232,31 @@ class Scrawl:
             except requests.ConnectionError:
                 print('请求出错地铁站', stnname)
 
+    def get_proxy(self):
+        def getOne():
+            try:
+                PROXY_POOL_URL = 'http://localhost:5555/get'
+                response = requests.get(PROXY_POOL_URL)
+                if response.status_code == 200:
+                    return response.text
+            except ConnectionError:
+                return None
+
+        ip = getOne()
+        if ip is not None:
+            proxy = {
+                'http': 'http://' + ip
+            }
+            return proxy
+        else:
+            print('获取代理失败')
+            return None
+
     def save_data(self, house_list):
         # if type == 'csv':
         #     save_data.save_to_csv(house_list)
         # else:
-        self.mysqlDB.save_to_mysql(house_list)
+        self.save.save_to_csv(house_list)
 
 
 if __name__ == '__main__':
