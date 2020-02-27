@@ -18,13 +18,12 @@ none_housecode = 0
 
 class Scrawl:
     none_housecode = 0
+    exclude_station_id = 'li110460717s100021770'
 
     def __init__(self):
         self.lines = {}
-        self.stations = {'li110460717s1620029748564158': {
-            'name': '韦家碾站', 'line': '1号线(科学城-韦家碾)',
-            'href': 'https://cd.lianjia.com/ditiefang/li110460717/'
-        }}
+        self.stations = []
+        self.mysqlDB = SaveToMysql()
 
     def get_lines(self):
         url = 'https://cd.lianjia.com/ershoufang/'
@@ -46,6 +45,8 @@ class Scrawl:
                         # 获取当前线路的所有地铁站
                         self.get_stations(line)
                     print('line获取完毕', self.lines)
+                    # 关闭数据库
+                    self.mysqlDB.close_DB()
                 else:
                     print('没有数据')
             else:
@@ -65,15 +66,25 @@ class Scrawl:
                 soup = BeautifulSoup(res.text, "html.parser")
                 result = soup.find('div', {'data-role': 'ditiefang'})
                 a_eles = result.find_all('div')[1].find_all('a')
+
                 for a_ele in a_eles:
                     href = a_ele['href']
                     index = href.split('/')[2]
+                    # 排除已经爬过的地铁站
+                    if self.exclude_station_id:
+                        if self.exclude_station_id != index:
+                            print('略过的地铁站', a_ele.text)
+                            continue
+                        else:
+                            self.exclude_station_id = None
+
                     station = {
+                        'index': index,
                         'name': a_ele.text,
                         'line': line['name'],
                         'href': "https://cd.lianjia.com" + href
                     }
-                    self.stations[index] = station
+                    self.stations.append(station)
                     # 获取当前地铁站的所有二手房
                     self.get_house_by_station(station)
                 print('station获取完毕', self.stations)
@@ -229,7 +240,6 @@ class Scrawl:
                         )['totalPage']
                     except:
                         total_page = 1
-                        print('Number Error')
                     # 分页查找
                     houses = []
                     for i in range(1, total_page + 1):
@@ -240,18 +250,17 @@ class Scrawl:
                         if house_one_page is not None:
                             print('当前页:', pg)
                             houses += house_one_page
-                    self.save_data('mysql', houses)
+                    self.save_data(houses)
                 else:
                     print('访问出错', page_stn.status_code)
             except requests.ConnectionError:
                 print('请求出错地铁站', stnname)
 
-    def save_data(self, type, house_list):
-        save_data = SaveToMysql(type)
-        if type == 'csv':
-            save_data.save_to_csv(house_list)
-        else:
-            save_data.save_to_mysql(house_list)
+    def save_data(self, house_list):
+        # if type == 'csv':
+        #     save_data.save_to_csv(house_list)
+        # else:
+        self.mysqlDB.save_to_mysql(house_list)
 
 
 if __name__ == '__main__':
