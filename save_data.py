@@ -40,7 +40,7 @@ class SaveData:
     def save_to_csv(self, house_list):
         df = pd.DataFrame(house_list,
                           columns=self.keys)
-        df.to_csv('Lianjia_project.csv', mode='a', encoding='utf_8_sig', index=False)
+        df.to_csv('Lianjia_project_async.csv', mode='a', encoding='utf_8_sig', index=False)
         self.total += len(house_list)
         print(len(house_list))
         print('已插入记录数', self.total)

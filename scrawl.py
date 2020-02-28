@@ -1,6 +1,8 @@
+import asyncio
 import json
 import re
 
+import aiohttp
 import requests
 from bs4 import BeautifulSoup
 
@@ -18,6 +20,8 @@ none_housecode = 0
 
 class Scrawl:
     none_housecode = 0
+    # 'li1620045664386244s16000002378864'
+    # https://cd.lianjia.com/ditiefang/li1620030075760238s1620030075760489/ie2dp4sf1mt2
     exclude_station_id = 'li110460717s100021770'
 
     def __init__(self):
@@ -130,6 +134,15 @@ class Scrawl:
         # 按条件查询所有数据
         for condition in conditions:
             url_stn = station['href']
+            # 排除已经爬过的地铁站
+            if self.exclude_station_id:
+                if self.exclude_station_id != station['index']:
+                    print('略过的地铁站', station['name'])
+                else:
+                    if 'ie1dp1sf1mt2' == condition['path_str']:
+                        self.exclude_station_id = None
+                    print('略过的地铁站', station['name'], '条件', condition['path_str'])
+                continue
 
             def format_data(item):
                 title = item.find('div', {'class': 'title'}).find('a')
@@ -178,31 +191,53 @@ class Scrawl:
                 )
                 return result
 
-            def get_house_by_page(page):
-                house_list = []
-                proxies = self.get_proxy()
-                try:
-                    res = requests.get(url_stn + page + condition['path_str'] + '/', headers=headers, proxies=proxies,
-                                       timeout=15)
-                    if res.status_code == 200:
-                        soup_dtl = BeautifulSoup(res.text, "html.parser")
-                        result_dtl = soup_dtl.find('ul', {'class': 'sellListContent'})
-                        try:
-                            house_li_eles = result_dtl.find_all('li')  # 有些地铁站没有二手房信息，所以遇到这种情况程序需要自动跳过，否则会报错
-                        except:
-                            print('无二手房信息')
-                            return None
-                        for item in house_li_eles:
-                            house = format_data(item)
-                            house += tuple(value for key, value in condition.items() if key != 'path_str')
-                            house_list.append(house)
-                        return house_list
-                    else:
-                        print('返回错误page', page)
-                        return None
-                except requests.ConnectionError:
-                    print('连接出错')
-                    get_house_by_page(pg)
+            async def get_house_by_page(queue, houses):
+                while not queue.empty():
+                    i = await queue.get()
+                    pg = ""
+                    if i > 1:
+                        pg = "pg" + str(i)
+                    house_list = []
+                    proxies = self.get_proxy()
+
+                    try:
+                        async with aiohttp.ClientSession() as session:
+                            print('当前页:', url_stn + pg + condition['path_str'] + '/')
+                            async with session.get(url_stn + pg + condition['path_str'] + '/', headers=headers,
+                                                   proxy=proxies['http'], timeout=15) as res:
+                                if res.status == 200:
+                                    html = await res.read()
+                                    soup_dtl = BeautifulSoup(html, "html.parser")
+                                    result_dtl = soup_dtl.find('ul', {'class': 'sellListContent'})
+                                    try:
+                                        house_li_eles = result_dtl.find_all('li')  # 有些地铁站没有二手房信息，所以遇到这种情况程序需要自动跳过，否则会报错
+                                    except:
+                                        print('无二手房信息')
+                                        return None
+                                    for item in house_li_eles:
+                                        house = format_data(item)
+                                        house += tuple(value for key, value in condition.items() if key != 'path_str')
+                                        house_list.append(house)
+                                    if house_list:
+                                        houses += house_list
+                                else:
+                                    print('返回错误page', pg)
+                                    return None
+                    except requests.ConnectionError:
+                        print('连接出错')
+                        queue.put_nowait(pg)
+
+            def eventloop(pages, houses):
+                queue = asyncio.Queue()
+                [queue.put_nowait(page) for page in range(pages)]
+                loop = asyncio.get_event_loop()
+                if pages < 5:
+                    max_threads = pages
+                else:
+                    max_threads = 4
+                tasks = [get_house_by_page(queue, houses) for index in range(max_threads)]
+                loop.run_until_complete(asyncio.wait(tasks))
+                loop.close()
 
             proxy = self.get_proxy()
             try:
@@ -218,15 +253,10 @@ class Scrawl:
                         total_page = 1
                     # 分页查找
                     houses = []
-                    for i in range(1, total_page + 1):
-                        pg = ""
-                        if i > 1:
-                            pg = "pg" + str(i)
-                        house_one_page = get_house_by_page(pg)
-                        if house_one_page is not None:
-                            print('当前页:', pg)
-                            houses += house_one_page
-                    self.save_data(houses)
+                    eventloop(total_page, houses)
+                    if houses:
+                        print('总共爬取了', len(houses))
+                        self.save_data(houses)
                 else:
                     print('访问出错', page_stn.status_code)
             except requests.ConnectionError:
