@@ -18,7 +18,9 @@ none_housecode = 0
 
 class Scrawl:
     none_housecode = 0
-    exclude_station_id = 'li110460717s100021770'
+    # 'li1620045664386244s16000002378864'
+    # https://cd.lianjia.com/ditiefang/li1620030075760238s1620030075760489/ie2dp4sf1mt2
+    exclude_station_id = 'li1620045664386244s16000002378864'
 
     def __init__(self):
         self.lines = {}
@@ -70,14 +72,6 @@ class Scrawl:
                 for a_ele in a_eles:
                     href = a_ele['href']
                     index = href.split('/')[2]
-                    # 排除已经爬过的地铁站
-                    if self.exclude_station_id:
-                        if self.exclude_station_id != index:
-                            print('略过的地铁站', a_ele.text)
-                            continue
-                        else:
-                            self.exclude_station_id = None
-
                     station = {
                         'index': index,
                         'name': a_ele.text,
@@ -129,6 +123,17 @@ class Scrawl:
         line = station['line']
         # 按条件查询所有数据
         for condition in conditions:
+            # 排除已经爬过的地铁站
+            if self.exclude_station_id:
+                if self.exclude_station_id != station['index']:
+                    print('略过的地铁站', station['name'])
+                    continue
+                else:
+                    if 'ie1dp1sf1mt2' == condition['path_str']:
+                        self.exclude_station_id = None
+                    print('略过的地铁站', station['name'], '条件', condition['path_str'])
+                    continue
+
             url_stn = station['href']
 
             def format_data(item):
@@ -201,8 +206,8 @@ class Scrawl:
                         print('返回错误page', page)
                         return None
                 except requests.ConnectionError:
-                    print('连接出错')
-                    get_house_by_page(pg)
+                    print('连接出错, 重新查询')
+                    get_house_by_page(page)
 
             proxy = self.get_proxy()
             try:
@@ -226,7 +231,8 @@ class Scrawl:
                         if house_one_page is not None:
                             print('当前页:', pg)
                             houses += house_one_page
-                    self.save_data(houses)
+                    if len(houses):
+                        self.save_data(houses)
                 else:
                     print('访问出错', page_stn.status_code)
             except requests.ConnectionError:
