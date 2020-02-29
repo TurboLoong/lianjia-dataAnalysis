@@ -1,9 +1,15 @@
 import asyncio
 import json
 import re
+import sys
 
 import aiohttp
 import requests
+
+try:
+    from aiohttp import ClientError
+except:
+    from aiohttp import ClientProxyConnectionError as ProxyConnectionError
 from bs4 import BeautifulSoup
 
 from save_data import SaveData
@@ -22,7 +28,7 @@ class Scrawl:
     none_housecode = 0
     # 'li1620045664386244s16000002378864'
     # https://cd.lianjia.com/ditiefang/li1620030075760238s1620030075760489/ie2dp4sf1mt2
-    exclude_station_id = 'li110460717s100021770'
+    exclude_station_id = 'li110460717s100130037'
 
     def __init__(self):
         self.lines = {}
@@ -139,7 +145,7 @@ class Scrawl:
                 if self.exclude_station_id != station['index']:
                     print('略过的地铁站', station['name'])
                 else:
-                    if 'ie1dp1sf1mt2' == condition['path_str']:
+                    if 'ie2dp1sf1mt1' == condition['path_str']:
                         self.exclude_station_id = None
                     print('略过的地铁站', station['name'], '条件', condition['path_str'])
                 continue
@@ -194,19 +200,21 @@ class Scrawl:
             async def get_house_by_page(queue, houses):
                 while not queue.empty():
                     i = await queue.get()
+                    print('i', i)
                     pg = ""
                     if i > 1:
                         pg = "pg" + str(i)
                     house_list = []
                     proxies = self.get_proxy()
-
+                    # conn = aiohttp.TCPConnector(ssl=False)
                     try:
                         async with aiohttp.ClientSession() as session:
                             print('当前页:', url_stn + pg + condition['path_str'] + '/')
-                            async with session.get(url_stn + pg + condition['path_str'] + '/', headers=headers,
-                                                   proxy=proxies['http'], timeout=15) as res:
+                            async with session.get(url_stn + pg + condition['path_str'] + '/', proxy=proxies['http'],
+                                                   headers=headers, timeout=30, allow_redirects=False) as res:
                                 if res.status == 200:
-                                    html = await res.read()
+                                    print(res.status)
+                                    html = await res.text()
                                     soup_dtl = BeautifulSoup(html, "html.parser")
                                     result_dtl = soup_dtl.find('ul', {'class': 'sellListContent'})
                                     try:
@@ -220,24 +228,28 @@ class Scrawl:
                                         house_list.append(house)
                                     if house_list:
                                         houses += house_list
+                                    sys.stdout.flush()
                                 else:
-                                    print('返回错误page', pg)
-                                    return None
-                    except requests.ConnectionError:
-                        print('连接出错')
-                        queue.put_nowait(pg)
+                                    print('请求响应码不合法', )
+                                    queue.put_nowait(i)
+                    except (
+                            ClientError, aiohttp.client_exceptions.ClientConnectorError, asyncio.TimeoutError,
+                            AttributeError):
+                        print('代理请求失败')
+                        queue.put_nowait(i)
 
             def eventloop(pages, houses):
                 queue = asyncio.Queue()
-                [queue.put_nowait(page) for page in range(pages)]
+                [queue.put_nowait(page) for page in range(1, pages + 1)]
                 loop = asyncio.get_event_loop()
                 if pages < 5:
                     max_threads = pages
                 else:
                     max_threads = 4
-                tasks = [get_house_by_page(queue, houses) for index in range(max_threads)]
+                tasks = [get_house_by_page(queue, houses) for _ in range(max_threads)]
                 loop.run_until_complete(asyncio.wait(tasks))
-                loop.close()
+                # loop.close()
+                print('异步请求完成')
 
             proxy = self.get_proxy()
             try:
@@ -245,18 +257,20 @@ class Scrawl:
                 page_stn = requests.get(url_stn + condition['path_str'], headers=headers, proxies=proxy, timeout=15)
                 if page_stn.status_code == 200:
                     soup_stn = BeautifulSoup(page_stn.text, "html.parser")
-                    try:  # 如果有多页数据，提取页码
-                        total_page = json.loads(
-                            soup_stn.find('div', {'class': 'page-box house-lst-page-box'})['page-data']
-                        )['totalPage']
-                    except:
-                        total_page = 1
-                    # 分页查找
-                    houses = []
-                    eventloop(total_page, houses)
-                    if houses:
-                        print('总共爬取了', len(houses))
-                        self.save_data(houses)
+                    total = soup_stn.find('div', {'class': 'resultDes clear'}).find('span').text
+                    if int(total):
+                        try:  # 如果有多页数据，提取页码
+                            total_page = json.loads(
+                                soup_stn.find('div', {'class': 'page-box house-lst-page-box'})['page-data']
+                            )['totalPage']
+                        except:
+                            total_page = 1
+                        # 分页查找
+                        houses = []
+                        eventloop(total_page, houses)
+                        if houses:
+                            print('总共爬取了', len(houses))
+                            self.save_data(houses)
                 else:
                     print('访问出错', page_stn.status_code)
             except requests.ConnectionError:
