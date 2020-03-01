@@ -20,7 +20,7 @@ class Scrawl:
     none_housecode = 0
     # 'li1620045664386244s16000002378864'
     # https://cd.lianjia.com/ditiefang/li1620030075760238s1620030075760489/ie2dp4sf1mt2
-    exclude_station_id = 'li1620045664386244s16000002378864'
+    exclude_station_id = 'li110460717s1620027473295247'
 
     def __init__(self):
         self.lines = {}
@@ -99,8 +99,7 @@ class Scrawl:
                {'index': 'dp4', 'value': 4}]
         sf = [{'index': 'sf1', 'value': '普通住宅'}]
         # 地铁距离 farFromStation
-        mts = [{'index': 'mt1', 'value': 1}, {'index': 'mt2', 'value': 2},
-               {'index': 'mt3', 'value': 3}]
+        mts = [{'index': 'mt1', 'value': 1}, {'index': 'mt2', 'value': 2}]
 
         # 构造所有的条件查询
         paths = []
@@ -125,14 +124,11 @@ class Scrawl:
         for condition in conditions:
             # 排除已经爬过的地铁站
             if self.exclude_station_id:
-                if self.exclude_station_id != station['index']:
-                    print('略过的地铁站', station['name'])
-                    continue
-                else:
+                if self.exclude_station_id == station['index']:
                     if 'ie1dp1sf1mt2' == condition['path_str']:
                         self.exclude_station_id = None
-                    print('略过的地铁站', station['name'], '条件', condition['path_str'])
-                    continue
+                print('略过的地铁站', station['name'], '条件', condition['path_str'])
+                continue
 
             url_stn = station['href']
 
