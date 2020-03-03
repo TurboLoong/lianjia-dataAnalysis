@@ -65,6 +65,8 @@ class LianjiaDownloaderMiddleware(object):
     # Not all methods need to be defined. If a method is not defined,
     # scrapy acts as if the downloader middleware does not modify the
     # passed objects.
+    def __init__(self, user_agent):
+        self.user_agent = user_agent
 
     @classmethod
     def from_crawler(cls, crawler):
@@ -78,6 +80,8 @@ class LianjiaDownloaderMiddleware(object):
         time.sleep(deley)
         agent = random.choice(self.user_agent)
         request.headers["User-Agent"] = agent
+        pro_addr = requests.get('http://127.0.0.1:5555/get').text
+        request.meta['proxy'] = 'http://' + pro_addr
 
     def process_response(self, request, response, spider):
         # Called with the response returned from the downloader.
@@ -100,10 +104,3 @@ class LianjiaDownloaderMiddleware(object):
 
     def spider_opened(self, spider):
         spider.logger.info('Spider opened: %s' % spider.name)
-
-
-class HttpbinProxyMiddleware(object):
-
-    def process_request(self, request, spider):
-        pro_addr = requests.get('http://127.0.0.1:5000/get').text
-        request.meta['proxy'] = 'http://' + pro_addr

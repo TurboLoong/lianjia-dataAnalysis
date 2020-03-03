@@ -14,6 +14,8 @@ BOT_NAME = 'lianjia'
 SPIDER_MODULES = ['lianjia.spiders']
 NEWSPIDER_MODULE = 'lianjia.spiders'
 
+MONGO_URI = 'localhost'
+MONGO_DB = 'lianjia'
 # Crawl responsibly by identifying yourself (and your website) on the user-agent
 # USER_AGENT = 'lianjia (+http://www.yourdomain.com)'
 USER_AGENTS_LIST = [
@@ -59,7 +61,7 @@ USER_AGENTS_LIST = [
 ROBOTSTXT_OBEY = False
 
 # Configure maximum concurrent requests performed by Scrapy (default: 16)
-# CONCURRENT_REQUESTS = 32
+CONCURRENT_REQUESTS = 5
 
 # Configure a delay for requests for the same website (default: 0)
 # See https://doc.scrapy.org/en/latest/topics/settings.html#download-delay
@@ -90,7 +92,7 @@ ROBOTSTXT_OBEY = False
 # Enable or disable downloader middlewares
 # See https://doc.scrapy.org/en/latest/topics/downloader-middleware.html
 DOWNLOADER_MIDDLEWARES = {
-    'lianjia.middlewares.HttpbinProxyMiddleware': 543
+    'lianjia.middlewares.LianjiaDownloaderMiddleware': 543
 }
 
 # Enable or disable extensions
@@ -101,9 +103,9 @@ DOWNLOADER_MIDDLEWARES = {
 
 # Configure item pipelines
 # See https://doc.scrapy.org/en/latest/topics/item-pipeline.html
-# ITEM_PIPELINES = {
-#    'lianjia.pipelines.LianjiaPipeline': 300,
-# }
+ITEM_PIPELINES = {
+    'lianjia.pipelines.MongoPipeline': 300,
+}
 
 # Enable and configure the AutoThrottle extension (disabled by default)
 # See https://doc.scrapy.org/en/latest/topics/autothrottle.html
