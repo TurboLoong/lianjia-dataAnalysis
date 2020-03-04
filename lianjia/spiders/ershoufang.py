@@ -11,13 +11,14 @@ from ..items import HouseItem
 class ErshoufangSpider(Spider):
     name = 'ershoufang'
     allowed_domains = ['cd.lianjia.com']
-    start_urls = ['http://cd.lianjia.com/ershoufang/']
+    start_urls = ['https://cd.lianjia.com/ershoufang/']
 
     def parse(self, response):
         line_links = response.xpath('//div[@data-role="ditiefang"]//a/@href').extract()
         # for link in line_links:
         #     yield Request(url=response.urljoin(link), callback=self.lines_parse)
         link = line_links[0]
+        print('parse', response.urljoin(link))
         yield Request(url=response.urljoin(link), callback=self.lines_parse)
 
     def lines_parse(self, response):
@@ -26,7 +27,8 @@ class ErshoufangSpider(Spider):
         conditions = self.get_condition()
         for link, name in tuple(zip(station_links, station_names))[:1]:
             for condition in conditions[:2]:
-                yield Request(url=response.urljoin(link + condition['path_str']), callback=self.station_parse,
+                print('lines_parse', response.urljoin(link + condition['path_str'] + '/'))
+                yield Request(url=response.urljoin(link + condition['path_str'] + '/'), callback=self.station_parse,
                               meta={'station': name, 'condition': condition, 'path': link})
 
     def station_parse(self, response):
@@ -39,11 +41,16 @@ class ErshoufangSpider(Spider):
             else:
                 total_page = 1
             for i in range(1, total_page + 1):
-                pg = ""
                 if i > 1:
                     pg = 'pg' + str(i)
-                yield Request(response.meta['path'] + pg + condition['path_str'] + '/', callback=self.get_house_by_page,
-                              meta=response.meta)
+                    yield Request(
+                        'https://' + self.allowed_domains[0] + response.meta['path'] + pg + condition['path_str'] + '/',
+                        callback=self.get_house_by_page,
+                        meta=response.meta)
+                else:
+                     self.get_house_by_page(response)
+        else:
+            pass
 
     def get_house_by_page(self, response):
         keys = ('housecode', 'name', 'residential', 'area', 'type', 'houseArea',
@@ -58,11 +65,11 @@ class ErshoufangSpider(Spider):
         for item in house_li_eles:
             house = self.format_data(item)
             house += tuple(value for key, value in condition.items() if key != 'path_str')
-            house.append(station)
-            for key, value in zip(keys, house):
-                house = HouseItem()
-                house[key] = value
-                yield house
+            house += tuple(station)
+            for key, value in tuple(zip(keys, house)):
+                result = HouseItem()
+                result[key] = value
+                yield result
 
     def get_condition(self):
         # 有无电梯 elevator

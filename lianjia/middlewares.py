@@ -5,10 +5,11 @@
 # See documentation in:
 # https://doc.scrapy.org/en/latest/topics/spider-middleware.html
 import random
-import time
 
 import requests as requests
 from scrapy import signals
+from scrapy.downloadermiddlewares.useragent import UserAgentMiddleware
+from w3lib.http import basic_auth_header
 
 
 class LianjiaSpiderMiddleware(object):
@@ -65,21 +66,15 @@ class LianjiaDownloaderMiddleware(object):
     # Not all methods need to be defined. If a method is not defined,
     # scrapy acts as if the downloader middleware does not modify the
     # passed objects.
-    def __init__(self, user_agent):
-        self.user_agent = user_agent
 
     @classmethod
     def from_crawler(cls, crawler):
         # This method is used by Scrapy to create your spiders.
-        s = cls(user_agent=crawler.settings.get('USER_AGENTS_LIST'))
+        s = cls()
         crawler.signals.connect(s.spider_opened, signal=signals.spider_opened)
         return s
 
     def process_request(self, request, spider):
-        deley = random.choice([0.5, 0.6, 0.7, 0.8, 1, 1.1, 1.2])
-        time.sleep(deley)
-        agent = random.choice(self.user_agent)
-        request.headers["User-Agent"] = agent
         pro_addr = requests.get('http://127.0.0.1:5555/get').text
         request.meta['proxy'] = 'http://' + pro_addr
 
@@ -104,3 +99,26 @@ class LianjiaDownloaderMiddleware(object):
 
     def spider_opened(self, spider):
         spider.logger.info('Spider opened: %s' % spider.name)
+
+
+class CustomProxyMiddleware(object):
+    def process_request(self, request, spider):
+        pro_addr = requests.get('http://127.0.0.1:5555/get').text
+        request.meta['proxy'] = 'http://' + pro_addr
+        request.headers['Proxy-Authorization'] = basic_auth_header('<proxy_user>', '<proxy_pass>')
+
+
+class CustomAgentMiddleware(UserAgentMiddleware):
+
+    def __init__(self, agents):
+        self.agents = agents
+
+    @classmethod
+    def from_crawler(cls, crawler):
+        return cls(
+            agents=crawler.settings.get('USER_AGENTS')
+        )
+
+    def process_request(self, request, spider):
+        agent = random.choice(self.agents)
+        request.headers['User-Agent'] = agent
