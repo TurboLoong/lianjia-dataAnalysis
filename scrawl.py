@@ -20,7 +20,8 @@ class Scrawl:
     none_housecode = 0
     # 'li1620045664386244s16000002378864'
     # https://cd.lianjia.com/ditiefang/li1620030075760238s1620030075760489/ie2dp4sf1mt2
-    exclude_station_id = 'li110460717s1620027473295247'
+    exclude_station_id = 'li1620045664386244s16000002378678'
+    pass_condition = 'ie1dp1sf1mt1'
 
     def __init__(self):
         self.lines = {}
@@ -48,7 +49,6 @@ class Scrawl:
                         self.get_stations(line)
                     print('line获取完毕', self.lines)
                     # 关闭数据库
-                    self.mysqlDB.close_DB()
                 else:
                     print('没有数据')
             else:
@@ -125,10 +125,14 @@ class Scrawl:
             # 排除已经爬过的地铁站
             if self.exclude_station_id:
                 if self.exclude_station_id == station['index']:
-                    if 'ie1dp1sf1mt2' == condition['path_str']:
+                    if self.pass_condition == condition['path_str']:
                         self.exclude_station_id = None
-                print('略过的地铁站', station['name'], '条件', condition['path_str'])
-                continue
+                    else:
+                        print('略过的地铁站', station['name'], '条件', condition['path_str'])
+                        continue
+                else:
+                    print('略过的地铁站', station['name'])
+                    continue
 
             url_stn = station['href']
 
@@ -182,8 +186,9 @@ class Scrawl:
             def get_house_by_page(page):
                 house_list = []
                 proxies = self.get_proxy()
+                path = url_stn + page + condition['path_str'] + '/'
                 try:
-                    res = requests.get(url_stn + page + condition['path_str'] + '/', headers=headers, proxies=proxies,
+                    res = requests.get(path, headers=headers, proxies=proxies,
                                        timeout=15)
                     if res.status_code == 200:
                         soup_dtl = BeautifulSoup(res.text, "html.parser")
@@ -192,7 +197,8 @@ class Scrawl:
                             house_li_eles = result_dtl.find_all('li')  # 有些地铁站没有二手房信息，所以遇到这种情况程序需要自动跳过，否则会报错
                         except:
                             print('无二手房信息')
-                            return None
+                            self.save_err_page(path)
+                            return []
                         for item in house_li_eles:
                             house = format_data(item)
                             house += tuple(value for key, value in condition.items() if key != 'path_str')
@@ -200,15 +206,19 @@ class Scrawl:
                         return house_list
                     else:
                         print('返回错误page', page)
-                        return None
+                        self.save_err_page(path)
+                        return []
                 except requests.ConnectionError:
                     print('连接出错, 重新查询')
-                    get_house_by_page(page)
+                    # 存入没有爬取的连接
+                    self.save_err_page(path)
+                    return []
 
             proxy = self.get_proxy()
+            path = url_stn + condition['path_str']
             try:
                 print('正在爬取的地铁站和条件', url_stn + condition['path_str'])
-                page_stn = requests.get(url_stn + condition['path_str'], headers=headers, proxies=proxy, timeout=15)
+                page_stn = requests.get(path, headers=headers, proxies=proxy, timeout=15)
                 if page_stn.status_code == 200:
                     soup_stn = BeautifulSoup(page_stn.text, "html.parser")
                     try:  # 如果有多页数据，提取页码
@@ -220,19 +230,28 @@ class Scrawl:
                     # 分页查找
                     houses = []
                     for i in range(1, total_page + 1):
-                        pg = ""
                         if i > 1:
                             pg = "pg" + str(i)
-                        house_one_page = get_house_by_page(pg)
-                        if house_one_page is not None:
-                            print('当前页:', pg)
+                            house_one_page = get_house_by_page(pg)
                             houses += house_one_page
+                        else:
+                            result_dtl = soup_stn.find('ul', {'class': 'sellListContent'})
+                            try:
+                                house_li_eles = result_dtl.find_all('li')  # 有些地铁站没有二手房信息，所以遇到这种情况程序需要自动跳过，否则会报错
+                                for item in house_li_eles:
+                                    house = format_data(item)
+                                    house += tuple(value for key, value in condition.items() if key != 'path_str')
+                                    houses.append(house)
+                            except:
+                                print('无二手房信息')
                     if len(houses):
                         self.save_data(houses)
                 else:
                     print('访问出错', page_stn.status_code)
+                    self.save_err_page(path)
             except requests.ConnectionError:
                 print('请求出错地铁站', stnname)
+                self.save_err_page(path)
 
     def get_proxy(self):
         def getOne():
@@ -259,6 +278,9 @@ class Scrawl:
         #     save_data.save_to_csv(house_list)
         # else:
         self.save.save_to_csv(house_list)
+
+    def save_err_page(self, href):
+        self.save.save_to_err(href)
 
 
 if __name__ == '__main__':
