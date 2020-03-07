@@ -4,7 +4,7 @@ import re
 import requests
 from bs4 import BeautifulSoup
 
-from save_data import SaveData
+from spider.save_data import SaveData
 
 headers = {
     'Cache-Control': 'max-age=0',
