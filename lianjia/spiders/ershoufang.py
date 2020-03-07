@@ -69,7 +69,7 @@ class ErshoufangSpider(Spider):
             for key, value in tuple(zip(keys, house)):
                 result = HouseItem()
                 result[key] = value
-                yield result
+            yield result
 
     def get_condition(self):
         # 有无电梯 elevator
